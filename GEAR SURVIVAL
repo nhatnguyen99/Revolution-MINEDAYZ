@@ -1,0 +1,698 @@
+/*
+	GEAR SURVIVAL BY VIN PURE
+	INVENTORY | ITEM | BOX
+	CREDITS
+	BUD by Slice
+	zcmd by Zeex
+	sscanf2 by Y_LESS
+	mSelection by d0
+	streamer by Incognito
+================================
+AddBoxItem(boxid,modelid);
+RemoveBoxItem(boxid,modelid);
+ShowBox(playerid);
+DeleteBox(boxid);
+ShowPutBoxItem(playerid);
+===INVENTORY
+SetPlayerInventorySlot(playerid,slot);
+AddInventoryItem(playerid,modelid);
+RemoveInventoryItem(playerid,modelid);
+ShowInventory(playerid);
+===ITEM
+PickupItem(playerid);
+CreateItem(modelid,x,y,z,rx,ry,rz,world,interior);
+*/
+#define BUD_USE_WHIRLPOOL false
+#define BUD_MAX_COLUMNS 100
+#define BUD_MULTIGET_MAX_ENTRIES 100
+#define BUD_MULTISET_MAX_ENTRIES 100
+///////////////////
+#include <a_samp>
+#include <BUD>
+#include <zcmd>
+#include <sscanf2>
+#include <mSelection>
+#include <streamer>
+////MAX AMOUNT DROP ITEM
+#define MAX_DROP_ITEMS 100
+/// M selection Menu extra id
+#define INVENTORY_MENU 1
+#define BOX_MENU 2
+#define PUTBOX_MENU 3
+///Dialog id
+#define DIALOG_INV 213
+#define DIALOG_BOX 214
+///MAX SLOT
+#define MAX_SLOT 50
+///
+#define PRESSED(%0) \
+        (((newkeys & (%0)) == (%0)) && ((oldkeys & (%0)) != (%0)))
+// test item pizza
+#define Pizza 1582
+#define ITEMBOX 2384
+//MAX BOX
+#define MAX_BOXS 100
+//////////////////////
+enum bInfo
+{
+	bCreate,
+	bObject,
+	Float:bPosX,
+	Float:bPosY,
+	Float:bPosZ,
+	bItem[21],
+};
+new BoxInfo[MAX_BOXS][bInfo];
+enum inv
+{
+	MSlot,
+	Slotu,
+	iSlot[50]
+}
+new InvInfo[MAX_PLAYERS][inv];
+new ItemObject[MAX_DROP_ITEMS];
+new	Text3D:LabelItem[MAX_DROP_ITEMS];
+//=================
+enum ItemData
+{
+    ItemModel,
+    Float:ItemPosX,
+    Float:ItemPosY,
+    Float:ItemPosZ,
+    Float:ItemRotX,
+    Float:ItemRotY,
+    Float:ItemRotZ,
+    ItemVWorld,
+    ItemInterior,
+};
+new ItemInfo[MAX_DROP_ITEMS][ItemData];
+
+public OnFilterScriptInit()
+{
+	print("\n--------------------------------------");
+	print("INVENTORY| ITEM | BOX BY VINPURE");
+	print("--------------------------------------\n");
+	BUD::Setting( opt.Database, "Inventory.db" );
+	BUD::Setting( opt.Asynchronous, true ); 
+	BUD::Setting( opt.KeepAliveTime, 3000 ); 
+	BUD::Setting( opt.CheckForUpdates, true ); 
+	BUD::Initialize( ); 
+	for(new i = 0 ; i < 50;i++)
+	{
+	new string[128];
+	format(string,sizeof(string),"Slot%d",i);
+	BUD::VerifyColumn(string, BUD::TYPE_NUMBER );
+	}
+	BUD::VerifyColumn("Slotu", BUD::TYPE_NUMBER );
+	BUD::VerifyColumn("MSlot", BUD::TYPE_NUMBER );
+	LoadBoxs();
+	return 1;
+}
+
+public OnFilterScriptExit()
+{
+	return 1;
+}
+CMD:box(playerid,params[])
+{
+	CreateBox(playerid);
+	return 1;
+}
+CMD:slot(playerid,params[])
+{
+	SetPlayerInventorySlot(playerid,21);
+	return 1;
+}
+CMD:inv(playerid,params[])
+{
+    ShowInventory(playerid);
+	return 1;
+}
+CMD:add(playerid,params[])
+{
+    AddInventoryItem(playerid,Pizza);
+    return 1;
+}
+CMD:pickup(playerid,params[])
+{
+	PickupItem(playerid);
+	return 1;
+}
+public OnPlayerDisconnect(playerid, reason)
+{
+    if (BUD::IsNameRegistered(GetName(playerid)))
+	{
+    SaveInventory(playerid);
+    }
+	return 1;
+}
+
+public OnPlayerSpawn(playerid)
+{
+	if (BUD::IsNameRegistered(GetName(playerid)))
+	{
+    LoadInventory(playerid);
+	}
+	else
+	{
+	BUD::RegisterName(GetName(playerid),"");
+	}
+	return 1;
+}
+
+public OnPlayerDeath(playerid, killerid, reason)
+{
+	return 1;
+}
+public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
+{
+	if(PRESSED(KEY_YES))
+	{
+	    ShowInventory(playerid);
+	}
+	if(PRESSED(KEY_CROUCH))
+	{
+		PickupItem(playerid);
+	}
+	if(PRESSED(KEY_WALK))
+	{
+    	for( new i = 0; i < MAX_BOXS;i++)
+		{
+			if(IsPlayerInRangeOfPoint(playerid,2,BoxInfo[i][bPosX],BoxInfo[i][bPosY],BoxInfo[i][bPosZ]))
+			{
+			ShowPlayerDialog(playerid,DIALOG_BOX,2,"BOX GEAR","ITEM\nDestroyBox","Select","CLOSE");
+			}
+		}
+	}
+	return 1;
+}
+public OnPlayerModelSelectionEx(playerid, response, extraid, modelid)
+{
+    if(extraid == INVENTORY_MENU)
+    {
+        if(response)
+        {
+        if(modelid == 332) return SendClientMessage(playerid,-1,"This slot no have item ");
+        SetPVarInt(playerid,"MODELIDINV",modelid);
+        ShowPlayerDialog(playerid,DIALOG_INV,0,"GEAR","Select type item","USE","DROP");
+        }
+        else SendClientMessage(playerid, 0xFF0000FF, "Close Inventory");
+	}
+	if(extraid == BOX_MENU)
+	{
+	    if(response)
+        {
+	    if(modelid == 332) return ShowPutItemBox(playerid);
+		if(InvInfo[playerid][Slotu] == InvInfo[playerid][MSlot]) return SendClientMessage(playerid,-1,"INVENTORY FULL");
+		for( new i = 0; i < MAX_BOXS;i++)
+		{
+			if(IsPlayerInRangeOfPoint(playerid,2,BoxInfo[i][bPosX],BoxInfo[i][bPosY],BoxInfo[i][bPosZ]))
+			{
+			AddInventoryItem(playerid,modelid);
+			RemoveBoxItem(i,modelid);
+			PlayAnim(playerid, "BOMBER", "BOM_Plant", 4.0, 0, 0, 0, 0, 0, 1);
+			}
+		}
+		}
+	}
+	if(extraid == PUTBOX_MENU)
+	{
+	    if(response)
+        {
+		if(modelid == 332) return SendClientMessage(playerid,-1,"This slot no have item ");
+		for( new i = 0; i < MAX_BOXS;i++)
+		{
+			if(IsPlayerInRangeOfPoint(playerid,2,BoxInfo[i][bPosX],BoxInfo[i][bPosY],BoxInfo[i][bPosZ]))
+			{
+			AddBoxItem(i,modelid);
+			RemoveInventoryItem(playerid,modelid);
+			PlayAnim(playerid, "BOMBER", "BOM_Plant", 4.0, 0, 0, 0, 0, 0, 1);
+			}
+		}
+		}
+	}
+    return 1;
+}
+public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
+{
+	if(dialogid == DIALOG_BOX)
+	{
+		if(!response) return 1;
+		if(response)
+		{
+			if(listitem == 0) return ShowBox(playerid);
+			if(listitem == 1)
+			{
+				for( new i = 0; i < MAX_BOXS;i++)
+				{
+					if(IsPlayerInRangeOfPoint(playerid,2,BoxInfo[i][bPosX],BoxInfo[i][bPosY],BoxInfo[i][bPosZ]))
+					{
+					new Float:x,Float:y,Float:z;
+					GetPlayerPos(playerid,x,y,z);
+					CreateItem(ITEMBOX,x,y,z-1,0,0,0,0,0);
+					DeleteBox(i);
+					PlayAnim(playerid, "BOMBER", "BOM_Plant", 4.0, 0, 0, 0, 0, 0, 1);
+					}
+				}
+			}
+			
+		}
+	}
+	if(dialogid == DIALOG_INV)
+	{
+		if(response)
+		{
+			SendClientMessage(playerid,-1,"DEBUG:USE ITEM");
+			if(GetPVarInt(playerid,"MODELIDINV") == ITEMBOX)
+			{
+			CreateBox(playerid);
+			RemoveInventoryItem(playerid,GetPVarInt(playerid,"MODELIDINV"));
+			SetPVarInt(playerid,"MODELIDINV",0);
+			PlayAnim(playerid, "BOMBER", "BOM_Plant", 4.0, 0, 0, 0, 0, 0, 1);
+			}
+		
+		}
+		if(!response)
+		{
+			new Float:x,Float:y,Float:z;
+			GetPlayerPos(playerid,x,y,z);
+			CreateItem(GetPVarInt(playerid,"MODELIDINV"),x,y,z-1,0,0,0,0,0);
+			SendClientMessage(playerid,-1,"DEBUG:DROP ITEM");
+			RemoveInventoryItem(playerid,GetPVarInt(playerid,"MODELIDINV"));
+			SetPVarInt(playerid,"MODELIDINV",0);
+			ApplyAnimation(playerid,"GRENADE","WEAPON_throwu",3.0,0,0,0,0,0);
+		}
+	}
+	return 1;
+}
+//stock
+//pickup
+stock PickupItem(playerid)
+{
+    for(new i = 0; i < sizeof(ItemInfo); i++)
+    {
+        if (IsPlayerInRangeOfPoint(playerid, 2.0,ItemInfo[i][ItemPosX],ItemInfo[i][ItemPosY],ItemInfo[i][ItemPosZ]))
+        {
+            if(GetPlayerVirtualWorld(playerid) == ItemInfo[i][ItemVWorld] && GetPlayerInterior(playerid) == ItemInfo[i][ItemInterior])
+            {
+            	if(InvInfo[playerid][Slotu] == InvInfo[playerid][MSlot]) return SendClientMessage(playerid,-1,"Inventory full");
+                ItemInfo[i][ItemPosX] = 0.0;
+                ItemInfo[i][ItemPosY] = 0.0;
+                ItemInfo[i][ItemPosZ] = 0.0;
+                ItemInfo[i][ItemRotX] = 0.0;
+                ItemInfo[i][ItemRotY] = 0.0;
+                ItemInfo[i][ItemRotZ] = 0.0;
+                Delete3DTextLabel(LabelItem[i]);
+                DestroyDynamicObject(ItemObject[i]);
+                AddInventoryItem(playerid,ItemInfo[i][ItemModel]);
+                SendClientMessage(playerid,-1,"Pickup item");
+                PlayAnim(playerid, "BOMBER", "BOM_Plant", 4.0, 0, 0, 0, 0, 0, 1);
+                return 1;
+            }
+        }
+    }
+    return 1;
+}
+stock PlayAnim(playerid, animlib[], animname[], Float:fDelta, loop, lockx, locky, freeze, time, forcesync)
+{
+	ApplyAnimation(playerid, animlib, animname, fDelta, loop, lockx, locky, freeze, time, forcesync);
+}
+stock RemoveInventoryItem(playerid,modelid)
+{
+	for(new i = 49;i>-1;i--)
+	{
+		if(InvInfo[playerid][iSlot][i] == modelid)
+		{
+			InvInfo[playerid][iSlot][i] = 0;
+			InvInfo[playerid][Slotu] -= 1;
+			break;
+		}
+	}
+	return 1;
+}
+
+stock AddInventoryItem(playerid,modelid)
+{
+	if(InvInfo[playerid][Slotu] == InvInfo[playerid][MSlot]) return SendClientMessage(playerid,-1,"Inventory full");
+	for(new i = 0;i<MAX_SLOT;i++)
+	{
+		if(InvInfo[playerid][iSlot][i] == 0)
+		{
+			InvInfo[playerid][iSlot][i] = modelid;
+			InvInfo[playerid][Slotu]+=1;
+			break;
+		}
+	}
+	return 1;
+}
+stock SetPlayerInventorySlot(playerid,slot)
+{
+	if(slot > 49 ) return SendClientMessage(playerid,-1,"Max slot is 49 ");
+	InvInfo[playerid][MSlot] = slot;
+	return 1;
+}
+stock ShowBox(playerid)
+{
+	new itembox[21];
+	for( new i = 0; i < MAX_BOXS;i++)
+	{
+		if(IsPlayerInRangeOfPoint(playerid,2,BoxInfo[i][bPosX],BoxInfo[i][bPosY],BoxInfo[i][bPosZ]))
+		{
+			for( new it = 0 ; it< 21; it++)
+			{
+				itembox[it] = BoxInfo[i][bItem][it];
+				
+				if(BoxInfo[i][bItem][it] == 0)
+				{
+				    itembox[it] = 332;
+				}
+			}
+			//ShowModelSelectionMenuEx(playerid, itembox,20,"BOX",BOX_MENU, 0.0, 0.0,0.0,1.0,0x000000FF);
+			ShowModelSelectionMenuEx(playerid, itembox,21,"BOX",BOX_MENU, 0.0, 0.0,0.0,1.0,0x000000FF);
+		}
+	}
+	return 1;
+}
+stock RemoveBoxItem(boxid,modelid)
+{
+	for(new i = 20;i>-1;i--)
+	{
+		if(BoxInfo[boxid][bItem][i] == modelid)
+		{
+			BoxInfo[boxid][bItem][i] = 0;
+			break;
+		}
+	}
+	return SaveBoxs();
+}
+stock AddBoxItem(boxid,modelid)
+{
+	for(new i = 0;i<21;i++)
+	{
+		if(BoxInfo[boxid][bItem][i] == 0)
+		{
+			BoxInfo[boxid][bItem][i] = modelid;
+			break;
+		}
+	}
+	return SaveBoxs();
+}
+stock ShowPutItemBox(playerid)
+{
+	new iteminv[100],string[128];
+	for(new i = 0; i < MAX_SLOT;i++)
+	{
+		iteminv[i] = InvInfo[playerid][iSlot][i];
+
+		if(InvInfo[playerid][iSlot][i] == 0)
+		{
+			iteminv[i] = 332;
+		}
+	}
+	format(string,sizeof(string),"Inventory:%d/%d(PUTBOX)",InvInfo[playerid][Slotu],InvInfo[playerid][MSlot]);
+	ShowModelSelectionMenuEx(playerid, iteminv,InvInfo[playerid][MSlot],string,PUTBOX_MENU, 0.0, 0.0,0.0,1.0,0x000000FF);
+	return 1;
+}
+stock ShowInventory(playerid)
+{
+	new iteminv[100],string[128];
+	for(new i = 0; i < MAX_SLOT;i++)
+	{
+		iteminv[i] = InvInfo[playerid][iSlot][i];
+		
+		if(InvInfo[playerid][iSlot][i] == 0)
+		{
+			iteminv[i] = 332;
+		}
+	}
+	format(string,sizeof(string),"Inventory:%d/%d",InvInfo[playerid][Slotu],InvInfo[playerid][MSlot]);
+	ShowModelSelectionMenuEx(playerid, iteminv,InvInfo[playerid][MSlot],string,INVENTORY_MENU, 0.0, 0.0,0.0,1.0,0x000000FF);
+	return 1;
+}
+stock ResetInventory(playerid)
+{
+	for(new i = 1 ; i <MAX_SLOT;i++) InvInfo[playerid][iSlot][i] = 0;
+	return 1;
+}
+stock SaveInventory(playerid)
+{
+    new iUID = BUD::GetNameUID(GetName(playerid));
+    BUD::MultiSet(iUID,"iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+    "Slot0",InvInfo[playerid][iSlot][0],
+    "Slot1",InvInfo[playerid][iSlot][1],
+    "Slot2",InvInfo[playerid][iSlot][2],
+    "Slot3",InvInfo[playerid][iSlot][3],
+    "Slot4",InvInfo[playerid][iSlot][4],
+    "Slot5",InvInfo[playerid][iSlot][5],
+    "Slot6",InvInfo[playerid][iSlot][6],
+    "Slot7",InvInfo[playerid][iSlot][7],
+    "Slot8",InvInfo[playerid][iSlot][8],
+    "Slot9",InvInfo[playerid][iSlot][9],
+    "Slot10",InvInfo[playerid][iSlot][10],
+    "Slot11",InvInfo[playerid][iSlot][11],
+    "Slot12",InvInfo[playerid][iSlot][12],
+    "Slot13",InvInfo[playerid][iSlot][13],
+    "Slot14",InvInfo[playerid][iSlot][14],
+    "Slot15",InvInfo[playerid][iSlot][15],
+    "Slot16",InvInfo[playerid][iSlot][16],
+    "Slot17",InvInfo[playerid][iSlot][17],
+	"Slot18",InvInfo[playerid][iSlot][18],
+	"Slot19",InvInfo[playerid][iSlot][19],
+	"Slot20",InvInfo[playerid][iSlot][20],
+	"Slot21",InvInfo[playerid][iSlot][21],
+	"Slot22",InvInfo[playerid][iSlot][22],
+	"Slot23",InvInfo[playerid][iSlot][23],
+	"Slot24",InvInfo[playerid][iSlot][24],
+	"Slot25",InvInfo[playerid][iSlot][25],
+	"Slot26",InvInfo[playerid][iSlot][26],
+	"Slot27",InvInfo[playerid][iSlot][27],
+	"Slot28",InvInfo[playerid][iSlot][28],
+	"Slot29",InvInfo[playerid][iSlot][29],
+	"Slot30",InvInfo[playerid][iSlot][30],
+	"Slot31",InvInfo[playerid][iSlot][31],
+	"Slot32",InvInfo[playerid][iSlot][32],
+	"Slot33",InvInfo[playerid][iSlot][33],
+	"Slot34",InvInfo[playerid][iSlot][34],
+	"Slot35",InvInfo[playerid][iSlot][35],
+	"Slot36",InvInfo[playerid][iSlot][36],
+	"Slot37",InvInfo[playerid][iSlot][37],
+	"Slot38",InvInfo[playerid][iSlot][38],
+	"Slot39",InvInfo[playerid][iSlot][39],
+	"Slot40",InvInfo[playerid][iSlot][40],
+	"Slot41",InvInfo[playerid][iSlot][41],
+	"Slot42",InvInfo[playerid][iSlot][42],
+	"Slot43",InvInfo[playerid][iSlot][43],
+	"Slot44",InvInfo[playerid][iSlot][44],
+	"Slot45",InvInfo[playerid][iSlot][45],
+	"Slot46",InvInfo[playerid][iSlot][46],
+	"Slot47",InvInfo[playerid][iSlot][47],
+	"Slot48",InvInfo[playerid][iSlot][48],
+	"Slot49",InvInfo[playerid][iSlot][49],
+    "Slotu",InvInfo[playerid][Slotu],
+	"MSlot",InvInfo[playerid][MSlot]);
+}
+stock LoadInventory(playerid)
+{
+    new iUID = BUD::GetNameUID(GetName(playerid));
+    BUD::MultiGet(iUID,"iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+    "Slot0",InvInfo[playerid][iSlot][0],
+    "Slot1",InvInfo[playerid][iSlot][1],
+    "Slot2",InvInfo[playerid][iSlot][2],
+    "Slot3",InvInfo[playerid][iSlot][3],
+    "Slot4",InvInfo[playerid][iSlot][4],
+    "Slot5",InvInfo[playerid][iSlot][5],
+    "Slot6",InvInfo[playerid][iSlot][6],
+    "Slot7",InvInfo[playerid][iSlot][7],
+    "Slot8",InvInfo[playerid][iSlot][8],
+    "Slot9",InvInfo[playerid][iSlot][9],
+    "Slot10",InvInfo[playerid][iSlot][10],
+    "Slot11",InvInfo[playerid][iSlot][11],
+    "Slot12",InvInfo[playerid][iSlot][12],
+    "Slot13",InvInfo[playerid][iSlot][13],
+    "Slot14",InvInfo[playerid][iSlot][14],
+    "Slot15",InvInfo[playerid][iSlot][15],
+    "Slot16",InvInfo[playerid][iSlot][16],
+    "Slot17",InvInfo[playerid][iSlot][17],
+	"Slot18",InvInfo[playerid][iSlot][18],
+	"Slot19",InvInfo[playerid][iSlot][19],
+	"Slot20",InvInfo[playerid][iSlot][20],
+	"Slot21",InvInfo[playerid][iSlot][21],
+	"Slot22",InvInfo[playerid][iSlot][22],
+	"Slot23",InvInfo[playerid][iSlot][23],
+	"Slot24",InvInfo[playerid][iSlot][24],
+	"Slot25",InvInfo[playerid][iSlot][25],
+	"Slot26",InvInfo[playerid][iSlot][26],
+	"Slot27",InvInfo[playerid][iSlot][27],
+	"Slot28",InvInfo[playerid][iSlot][28],
+	"Slot29",InvInfo[playerid][iSlot][29],
+	"Slot30",InvInfo[playerid][iSlot][30],
+	"Slot31",InvInfo[playerid][iSlot][31],
+	"Slot32",InvInfo[playerid][iSlot][32],
+	"Slot33",InvInfo[playerid][iSlot][33],
+	"Slot34",InvInfo[playerid][iSlot][34],
+	"Slot35",InvInfo[playerid][iSlot][35],
+	"Slot36",InvInfo[playerid][iSlot][36],
+	"Slot37",InvInfo[playerid][iSlot][37],
+	"Slot38",InvInfo[playerid][iSlot][38],
+	"Slot39",InvInfo[playerid][iSlot][39],
+	"Slot40",InvInfo[playerid][iSlot][40],
+	"Slot41",InvInfo[playerid][iSlot][41],
+	"Slot42",InvInfo[playerid][iSlot][42],
+	"Slot43",InvInfo[playerid][iSlot][43],
+	"Slot44",InvInfo[playerid][iSlot][44],
+	"Slot45",InvInfo[playerid][iSlot][45],
+	"Slot46",InvInfo[playerid][iSlot][46],
+	"Slot47",InvInfo[playerid][iSlot][47],
+	"Slot48",InvInfo[playerid][iSlot][48],
+	"Slot49",InvInfo[playerid][iSlot][49],
+    "Slotu",InvInfo[playerid][Slotu],
+	"MSlot",InvInfo[playerid][MSlot]);
+}
+stock GetName(playerid)
+{
+	new name[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, name, sizeof(name));
+	return name;
+}
+stock CreateItem(Model,Float:X, Float:Y, Float:Z,Float:RX,Float:RY,Float:RZ, world, interior)
+{
+    if(Model != 0)
+    {
+        for(new i = 0; i < sizeof(ItemInfo); i++)
+        {
+            if(ItemInfo[i][ItemPosX] == 0.0 && ItemInfo[i][ItemPosY] == 0.0 && ItemInfo[i][ItemPosZ] == 0.0)
+            {
+                ItemInfo[i][ItemModel] = Model;
+                ItemInfo[i][ItemPosX] = X;
+                ItemInfo[i][ItemPosY] = Y;
+                ItemInfo[i][ItemPosZ] = Z;
+                ItemInfo[i][ItemRotX] = RX;
+                ItemInfo[i][ItemRotY] = RY;
+                ItemInfo[i][ItemRotZ] = RZ;
+                ItemInfo[i][ItemVWorld] = world;
+                ItemInfo[i][ItemInterior] = interior;
+				LabelItem[i] = Create3DTextLabel("[ITEM]",0xAFAFAFAA,X,Y,Z,5.0,world,interior);
+                ItemObject[i] = CreateDynamicObject(Model, X, Y, Z,RX,RY,RZ, world);
+                return 1;
+            }
+        }
+        return 1;
+    }
+    return 1;
+}
+stock CreateBox(playerid)
+{
+	for(new iIndex= 0 ; iIndex< MAX_BOXS;iIndex++)
+	{
+		if(BoxInfo[iIndex][bCreate] == 0)
+		{
+			GetPlayerPos(playerid,BoxInfo[iIndex][bPosX],BoxInfo[iIndex][bPosY],BoxInfo[iIndex][bPosZ]);
+			BoxInfo[iIndex][bObject] = CreateDynamicObject(964,BoxInfo[iIndex][bPosX],BoxInfo[iIndex][bPosY],BoxInfo[iIndex][bPosZ]-1,0,0,0,0,0);
+			BoxInfo[iIndex][bCreate] = 1;
+			for(new i = 0; i < 21;i ++)
+			{
+			BoxInfo[iIndex][bItem][i] = 0;
+			}
+			break;
+		}
+	}
+	return SaveBoxs();
+}
+stock DeleteBox(iIndex)
+{
+		if(BoxInfo[iIndex][bPosX] != 0.0 && BoxInfo[iIndex][bPosZ] != 0.0 && BoxInfo[iIndex][bPosZ] != 0.0)
+		{
+		    DestroyDynamicObject(BoxInfo[iIndex][bObject]);
+			BoxInfo[iIndex][bPosX] = 0.0;
+			BoxInfo[iIndex][bPosY] = 0.0;
+			BoxInfo[iIndex][bPosZ] = 0.0;
+			BoxInfo[iIndex][bCreate] = 0;
+			for(new i = 0; i < 21;i ++)
+			{
+			BoxInfo[iIndex][bItem][i] = 0;
+			}
+		}
+		return SaveBoxs();
+}
+stock SaveBoxs()
+{
+	new szFileStr[1024],
+	File: fHandle = fopen("Boxs.cfg", io_write);
+
+	for(new iIndex; iIndex < MAX_BOXS; iIndex++)
+	{
+		format(szFileStr, sizeof(szFileStr), "%d|%f|%f|%f|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|\r\n",
+		BoxInfo[iIndex][bCreate],
+		BoxInfo[iIndex][bPosX],
+		BoxInfo[iIndex][bPosY],
+		BoxInfo[iIndex][bPosZ],
+		BoxInfo[iIndex][bItem][0],
+		BoxInfo[iIndex][bItem][1],
+		BoxInfo[iIndex][bItem][2],
+		BoxInfo[iIndex][bItem][3],
+		BoxInfo[iIndex][bItem][4],
+		BoxInfo[iIndex][bItem][5],
+		BoxInfo[iIndex][bItem][6],
+		BoxInfo[iIndex][bItem][7],
+		BoxInfo[iIndex][bItem][8],
+		BoxInfo[iIndex][bItem][9],
+		BoxInfo[iIndex][bItem][10],
+		BoxInfo[iIndex][bItem][11],
+		BoxInfo[iIndex][bItem][12],
+		BoxInfo[iIndex][bItem][13],
+		BoxInfo[iIndex][bItem][14],
+		BoxInfo[iIndex][bItem][15],
+		BoxInfo[iIndex][bItem][16],
+		BoxInfo[iIndex][bItem][17],
+		BoxInfo[iIndex][bItem][18],
+		BoxInfo[iIndex][bItem][19],
+		BoxInfo[iIndex][bItem][20]);
+		fwrite(fHandle, szFileStr);
+	}
+	return fclose(fHandle);
+}
+
+stock LoadBoxs()
+{
+	if(!fexist("Boxs.cfg")) return 1;
+
+	new szFileStr[128],
+	File: iFileHandle = fopen("Boxs.cfg", io_read),
+	iIndex;
+
+	while(iIndex < sizeof(BoxInfo) && fread(iFileHandle, szFileStr))
+	{
+		sscanf(szFileStr, "p<|>ifffiiiiiiiiiiiiiiiiiiiii",
+		BoxInfo[iIndex][bCreate],
+		BoxInfo[iIndex][bPosX],
+		BoxInfo[iIndex][bPosY],
+		BoxInfo[iIndex][bPosZ],
+		BoxInfo[iIndex][bItem][0],
+		BoxInfo[iIndex][bItem][1],
+		BoxInfo[iIndex][bItem][2],
+		BoxInfo[iIndex][bItem][3],
+		BoxInfo[iIndex][bItem][4],
+		BoxInfo[iIndex][bItem][5],
+		BoxInfo[iIndex][bItem][6],
+		BoxInfo[iIndex][bItem][7],
+		BoxInfo[iIndex][bItem][8],
+		BoxInfo[iIndex][bItem][9],
+		BoxInfo[iIndex][bItem][10],
+		BoxInfo[iIndex][bItem][11],
+		BoxInfo[iIndex][bItem][12],
+		BoxInfo[iIndex][bItem][13],
+		BoxInfo[iIndex][bItem][14],
+		BoxInfo[iIndex][bItem][15],
+		BoxInfo[iIndex][bItem][16],
+		BoxInfo[iIndex][bItem][17],
+		BoxInfo[iIndex][bItem][18],
+		BoxInfo[iIndex][bItem][19],
+		BoxInfo[iIndex][bItem][20]);
+		if(BoxInfo[iIndex][bCreate] == 1)
+		{
+        BoxInfo[iIndex][bObject] = CreateDynamicObject(964,BoxInfo[iIndex][bPosX],BoxInfo[iIndex][bPosY],BoxInfo[iIndex][bPosZ]-1,0,0,0,0,0);
+		}
+		++iIndex;
+	}
+	return fclose(iFileHandle);
+}
