@@ -302,7 +302,7 @@ public OnPlayerClickPlayerTextDraw(playerid, PlayerText:playertextid)
 				RemovePlayerWeapon(playerid,GetModelWeapon(GetPVarInt(playerid,"IAModelid")));
 				ShowInventory(playerid);
 				SetPVarInt(playerid,"WeaponAdd",0);
-				PlayerTextDrawSetString(playerid,Inventory[9],"Them Item");
+				PlayerTextDrawSetString(playerid,Inventory[9],"Add Item");
 				PlayerTextDrawShow(playerid,Inventory[9]);
 				}
 			}
